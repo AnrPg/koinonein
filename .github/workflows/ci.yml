@@ -1,0 +1,88 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  lint-and-test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        node-version: [16.x]
+        python-version: [3.9]
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: ${{ matrix.node-version }}
+          cache: yarn
+
+      - name: Install frontend dependencies
+        working-directory: services/frontend
+        run: yarn install --frozen-lockfile
+
+      - name: Lint frontend with ESLint
+        working-directory: services/frontend
+        run: yarn lint
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Install backend dependencies
+        working-directory: services/ml-service
+        run: |
+          pip install --upgrade pip
+          pip install black flake8 pytest fastapi uvicorn
+
+      - name: Lint backend with Black
+        working-directory: services/ml-service
+        run: black --check .
+
+      - name: Lint backend with Flake8
+        working-directory: services/ml-service
+        run: flake8 .
+
+      - name: Run frontend tests
+        working-directory: services/frontend
+        run: yarn test --ci
+
+      - name: Run backend tests
+        working-directory: services/ml-service
+        run: pytest --maxfail=1 --disable-warnings -q
+
+  build:
+    needs: lint-and-test
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js (build)
+        uses: actions/setup-node@v3
+        with:
+          node-version: 16.x
+          cache: yarn
+
+      - name: Build frontend
+        working-directory: services/frontend
+        run: |
+          yarn install --frozen-lockfile
+          yarn build
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v3
+        with:
+          name: frontend-build
+          path: services/frontend/.next
+
+  # (Optional) Deploy step could follow, e.g., to Vercel or Docker registry
